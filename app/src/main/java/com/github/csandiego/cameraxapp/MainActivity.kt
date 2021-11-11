@@ -12,6 +12,11 @@ import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.File
 import java.nio.ByteBuffer
@@ -25,6 +30,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
+
+    private lateinit var barcodeScanner: BarcodeScanner
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +51,11 @@ class MainActivity : AppCompatActivity() {
         outputDirectory = getOutputDirectory()
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        val options = BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .build()
+        barcodeScanner = BarcodeScanning.getClient(options)
     }
 
     private fun takePhoto() {
@@ -96,9 +108,10 @@ class MainActivity : AppCompatActivity() {
             val imageAnalyzer = ImageAnalysis.Builder()
                 .build()
                 .also {
-                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { luma ->
-                        Log.d(TAG, "Average luminosity: $luma")
-                    })
+                    it.setAnalyzer(cameraExecutor, barcodeAnalyzer)
+//                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { luma ->
+//                        Log.d(TAG, "Average luminosity: $luma")
+//                    })
                 }
 
             // Select back camera as a default
@@ -178,6 +191,25 @@ class MainActivity : AppCompatActivity() {
             listener(luma)
 
             image.close()
+        }
+    }
+
+    private val barcodeAnalyzer = object : ImageAnalysis.Analyzer {
+
+        @ExperimentalGetImage
+        override fun analyze(image: ImageProxy) {
+            image.image?.let {
+                val input = InputImage.fromMediaImage(it, image.imageInfo.rotationDegrees)
+                barcodeScanner.process(input)
+                    .addOnSuccessListener {
+                        if (it.isNotEmpty()) {
+                            Log.d(TAG, "Number of barcodes: " + it.size)
+                        }
+                    }
+                    .addOnCompleteListener {
+                        image.close()
+                    }
+            } ?: image.close()
         }
     }
 }
